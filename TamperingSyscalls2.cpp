@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 /*                           TamperingSyscalls2.cpp - @rad9800     c++20                */
-/*              C++ Generic x64 user-land evasion technique utilizing HWBP.cpp          */
+/*              C++ Generic x64 user-land evasion technique utilizing HWBPP.cpp         */
 /*                   Hides up to 12 args of up to 4 NT calls per thread                 */
 //////////////////////////////////////////////////////////////////////////////////////////
 #include <windows.h>
