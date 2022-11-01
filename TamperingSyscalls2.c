@@ -4,6 +4,7 @@
 /*                   Hides up to 12 args of up to 4 NT calls per thread                 */
 //////////////////////////////////////////////////////////////////////////////////////////
 #include <Windows.h>
+#include <stdio.h>
 
 //////////////////////////////////////////////////////////////////////////////////////////
 /*                                          Macros                                      */
@@ -16,18 +17,9 @@
 #define _DEBUG 1 // 0 (disabled) / 1 (enabled) 
 
 #if _DEBUG == 0
-#define PRINT( STR, ... )
+#define PRINT( ... )
 #else
-#define PRINT( STR, ... )                                                               \
-    if (1) {                                                                            \
-        LPSTR buf = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, 1024 );              \
-        if ( buf != NULL ) {                                                            \
-            int len = wsprintfA( buf, STR, __VA_ARGS__ );                               \
-            WriteConsoleA( GetStdHandle( STD_OUTPUT_HANDLE ), buf, len, NULL, NULL );   \
-            HeapFree( GetProcessHeap(), 0, buf );                                       \
-        }                                                                               \
-    }  
-
+#define PRINT printf
 #endif
 
 #define PRINT_ARGS( State, ExceptionInfo, address )                     \
