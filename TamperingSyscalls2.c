@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 /*                           TamperingSyscalls2.c - @rad9800                            */
-/*              C++ Generic x64 user-land evasion technique utilizing debug registers   */
+/*             C Generic x64 user-land evasion technique utilizing debug registers      */
 /*                   Hides up to 12 args of up to 4 NT calls per thread                 */
 //////////////////////////////////////////////////////////////////////////////////////////
 #include <Windows.h>
@@ -38,12 +38,6 @@ for (UINT idx = 0; idx < STK_ARGS; idx++){                              \
 //////////////////////////////////////////////////////////////////////////////////////////
 /*                                          Typedefs                                    */
 //////////////////////////////////////////////////////////////////////////////////////////
-typedef struct {
-    uintptr_t function_address;    // +0x0
-    uintptr_t sys_call_address;    // +0x12
-    UINT pos;
-} address_information;
-
 typedef struct {
     uintptr_t            rcx;    // First
     uintptr_t            rdx;    // Second
@@ -96,7 +90,6 @@ LONG WINAPI exception_handler(const PEXCEPTION_POINTERS ExceptionInfo)
                     debug_register_pos] =
                     sys_call_descriptors[i].sys_call_address;
 
-
                 sys_call_descriptors[i].function_args.rcx =
                     ExceptionInfo->ContextRecord->Rcx;
                 sys_call_descriptors[i].function_args.rdx =
@@ -119,10 +112,11 @@ LONG WINAPI exception_handler(const PEXCEPTION_POINTERS ExceptionInfo)
                 ExceptionInfo->ContextRecord->R8 = 0ull;
                 ExceptionInfo->ContextRecord->R9 = 0ull;
 
-                for (unsigned j = 0; j < STK_ARGS; j++) {
-                    const size_t offset = j * 0x8 + 0x28;
-                    *(PULONG64)(ExceptionInfo->ContextRecord->Rsp + offset) = 0;
-                }
+                memset(
+                    (PVOID)(ExceptionInfo->ContextRecord->Rsp + 0x28), 
+                    0, 
+                    STK_ARGS * sizeof(uintptr_t)
+                );
 
                 PRINT_ARGS("HIDDEN", ExceptionInfo, exception_address);
 
@@ -197,6 +191,7 @@ find_gadget(
  *    address: address of function to point a debug register towards
  *    pos: Dr[0-3]
  *    init: TRUE (Sets)/FALSE (Removes)
+ *
  */
 void
 set_hardware_breakpoint(
@@ -206,23 +201,29 @@ set_hardware_breakpoint(
     const BOOL init
 )
 {
+    BOOL modified = FALSE;
     CONTEXT context = { .ContextFlags = CONTEXT_DEBUG_REGISTERS };
-    GetThreadContext(thd, &context);
 
+    GetThreadContext(thd, &context);
     if (init) {
         (&context.Dr0)[pos] = address;
         context.Dr7 &= ~(3ull << (16 + 4 * pos));
         context.Dr7 &= ~(3ull << (18 + 4 * pos));
         context.Dr7 |= 1ull << (2 * pos);
+
+        modified = TRUE;
     }
     else {
         if ((&context.Dr0)[pos] == address) {
             context.Dr7 &= ~(1ull << (2 * pos));
             (&context.Dr0)[pos] = 0ull;
+
+            modified = TRUE;
         }
     }
-
-    SetThreadContext(thd, &context);
+    if (modified) {
+        SetThreadContext(thd, &context);
+    }
 }
 
 /*
@@ -235,21 +236,14 @@ set_hardware_breakpoint(
  */
 void
 clear_sys_call_descriptor_entry(
-    sys_call_descriptor* sys_call_descriptor
+    sys_call_descriptor* p_sys_call_descriptor
 )
 {
-    sys_call_descriptor->function_address = 0ull;
-    sys_call_descriptor->sys_call_address = 0ull;
-    sys_call_descriptor->key_thread_id_val = 0ul;
-    sys_call_descriptor->debug_register_pos = 0u;
-    sys_call_descriptor->function_args.rcx = 0ull;
-    sys_call_descriptor->function_args.rdx = 0ull;
-    sys_call_descriptor->function_args.r8 = 0ull;
-    sys_call_descriptor->function_args.r9 = 0ull;
-    for (size_t j = 0; j < STK_ARGS; j++)
-    {
-        sys_call_descriptor->function_args.rsp[j] = 0ull;
-    }
+    memset(
+        p_sys_call_descriptor, 
+        0, 
+        sizeof(sys_call_descriptor)
+    );
 }
 
 /*
@@ -259,6 +253,7 @@ clear_sys_call_descriptor_entry(
  *
  * returns: handler to the exception handler (can be removed with
  *          RemoveVectoredExceptionHandler.
+ *
  */
 PVOID
 init_tampering_sys_call(
@@ -274,6 +269,53 @@ init_tampering_sys_call(
     }
 
     return handler;
+}
+
+
+/*
+ * Function: un_init_tampering_sys_call
+ * ---------------------------------
+ *  Un-initializes the structures and globals required and disables
+ *  all currently enabled hardware breakpoints pertaining to tampering
+ *  sys_calls.
+ *
+ */
+void
+un_init_tampering_sys_call(
+    const PVOID handler
+)
+{
+    EnterCriticalSection(&g_critical_section);
+
+    for (unsigned int i = 0; i < MAX_DEBUG_REGISTERS; i++)
+    {
+        if (sys_call_descriptors[i].function_address != 0
+            && sys_call_descriptors[i].key_thread_id_val != 0)
+        {
+            HANDLE thd = OpenThread(THREAD_ALL_ACCESS, FALSE,
+                sys_call_descriptors[i].key_thread_id_val);
+
+            set_hardware_breakpoint(
+                thd,
+                sys_call_descriptors[i].function_address,
+                sys_call_descriptors[i].debug_register_pos,
+                FALSE
+            );
+
+            if (thd != INVALID_HANDLE_VALUE) {
+                CloseHandle(thd);
+            }
+
+            clear_sys_call_descriptor_entry(&sys_call_descriptors[i]);
+            break;
+        }
+    }
+
+    LeaveCriticalSection(&g_critical_section);
+
+    RemoveVectoredExceptionHandler(handler);
+
+    DeleteCriticalSection(&g_critical_section);
 }
 
 /*
@@ -327,8 +369,7 @@ set_tampering_sys_call(
 /*
  * Function: remove_tampering_sys_call
  * -----------------------------------
- *  removes entries to global structures, and removes corresponding hardware
- *  breakpoint
+ *  Destroys all objects and debug registers set during init or use.
  *
  * nt_function_address: & of NT function
  * pos: Debug register position (0-3)
@@ -385,7 +426,6 @@ test_thread(
             "NtCreateMutant"),
         1
     );
-
     return 0;
 }
 
@@ -416,7 +456,7 @@ int main()
         0
     );
 
-    RemoveVectoredExceptionHandler(handler);
+    un_init_tampering_sys_call(handler);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
