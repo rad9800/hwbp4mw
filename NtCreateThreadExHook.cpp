@@ -1,6 +1,15 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 /*                                  Detour Original Thread                              */
 //////////////////////////////////////////////////////////////////////////////////////////
+// 1) Disable HWBP for that thread
+// 2) Create thread with the correct arguments but for the (7th | against 0x1) to create suspended
+// 3) Get thread context on the Rcx which is the HANDLE output
+// 4) Modify context with the correct hwbp from global variable
+// 5) Set thread context with updated context
+// 6) Resume thread
+// 7) Restore our HWBP for our current thread
+// 8) Set our RAX value to the return valued from the detoured NtCreateThreadEx
+// 9) Set our RIP to a ret gadget so we avoid calling syscall again
 
 // Global Variable 
 PVOID START_THREAD{ 0 };
