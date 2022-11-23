@@ -27,6 +27,7 @@ struct descriptor_entry
     uintptr_t adr;
     unsigned pos;
     DWORD tid;
+    BOOL dis;
     exception_callback fun;
 
 
@@ -156,13 +157,14 @@ set_hardware_breakpoints(
  *    pos: Dr[0-3]
  *    fun: callback function matching the exception_callback signature
  *    tid: Thread ID (if is 0, will apply hook to all threads)
- *
+ *    dis: Disable DR during callback (allows you to call original function)
  */
 void insert_descriptor_entry(
     const uintptr_t adr,
     const unsigned pos,
     const exception_callback fun,
-    const DWORD tid
+    const DWORD tid,
+    const BOOL dis
 )
 {
     struct descriptor_entry* new = MALLOC(sizeof(struct descriptor_entry));
@@ -174,6 +176,7 @@ void insert_descriptor_entry(
     new->pos = idx;
     new->tid = tid;
     new->fun = fun;
+    new->dis = TRUE;
 
     new->next = head;
 
@@ -281,9 +284,35 @@ LONG WINAPI exception_handler(
             {
                 if (temp->tid != 0 && temp->tid != GetCurrentThreadId())
                     continue;
+                //
+                // We have found our node, now check if we need to disable current Dr
+                //
+                if (temp->dis)
+                {
+                    set_hardware_breakpoint(
+                        GetCurrentThreadId(),
+                        temp->adr,
+                        temp->pos,
+                        FALSE
+                    );
+                }
 
                 temp->fun(ExceptionInfo);
-                resolved = TRUE;
+
+                //
+                // re-enable dr for our current thread
+                //
+            	if (temp->dis)
+                {
+                    set_hardware_breakpoint(
+                        GetCurrentThreadId(),
+                        temp->adr,
+                        temp->pos,
+                        TRUE
+                    );
+                }
+
+            	resolved = TRUE;
             }
 
             temp = temp->next;
@@ -361,6 +390,7 @@ hardware_engine_stop(
  */
 void sleep_callback_test(const PEXCEPTION_POINTERS ExceptionInfo)
 {
+    Sleep(1000);
     ExceptionInfo->ContextRecord->EFlags |= (1 << 16);
     ExceptionInfo->ContextRecord->Rcx = 0;
 }
@@ -375,7 +405,7 @@ int main()
     struct descriptor_entry* temp;
 
     /* 0 - all threads / GetCurrentThreadId() */
-    insert_descriptor_entry(&Sleep, 0, sleep_callback_test, 0);
+    insert_descriptor_entry(&Sleep, 0, sleep_callback_test, 0, TRUE);
     //insert_descriptor_entry(&Sleep, 0, sleep_callback_test, GetCurrentThreadId());
 
     Sleep(0xDEADBEEF);
