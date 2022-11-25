@@ -247,11 +247,11 @@ void delete_descriptor_entry(
 
     if (found)
     {
-        set_hardware_breakpoint(
-            tid,
+        set_hardware_breakpoints(
             adr,
             pos,
-            FALSE
+            FALSE,
+            tid
         );
     }
 
