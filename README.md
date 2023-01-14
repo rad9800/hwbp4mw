@@ -1,5 +1,18 @@
 This article was origininally for [VX-Underground Black Mass Halloween Edition 2022](https://papers.vx-underground.org/papers/Other/VXUG%20Zines/Black%20Mass%20Halloween%202022.pdf).
 
+Hooking Engines:
+- [Multi-thread safe x86/x64 hwbp hooking engine c](HWBP.c)
+- [PAGE_GUARD/hwbp Breakpoint Library c++20](DRPGG.cpp)
+- [hwbp Library (DLL example) c++20](HWBPP.cpp)
+
+Generic x64 user-land evasion technique utilizing debug registers:
+
+- [TamperingSyscalls2 c](TamperingSyscalls2.c)
+- [TamperingSyscalls2 c++20](TamperingSyscalls2.cpp)
+
+Example ETW/AMSI hooks available
+- [rad9800/misc](https://github.com/rad9800/misc/tree/main/hooks)
+
 ## Hardware Breakpoints for Malware v 1.0 
 
 Our task is to trivially hook functions and divert the code flow as needed, and finally 
